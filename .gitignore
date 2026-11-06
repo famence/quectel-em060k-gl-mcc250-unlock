@@ -1,0 +1,12 @@
+# Ignore local user backups, keys, and large raw firmware images
+backups/
+*.zip
+*.ubi
+*.bin
+*.key
+*.pem
+*.orig
+*.tar.gz
+*.log
+__pycache__/
+.DS_Store
