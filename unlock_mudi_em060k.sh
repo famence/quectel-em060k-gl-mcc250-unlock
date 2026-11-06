@@ -1,24 +1,37 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Automated Software Unlock for Quectel EM060K-GL (MCC 250 / Russia LTE)
+# Automated Software Unlock for Quectel EM060K-GL (Russia MCC 250 & Iran MCC 432)
 # Target Device : GL.iNet Mudi V2 (GL-E750V2) with Quectel EM060K-GL
 # Firmware      : EM060KGLAAR01A11M2G_01.202.01.202
 #
 # Usage:
-#   ./unlock_mudi_em060k.sh [ssh_target] [apn]
-# Example:
+#   ./unlock_mudi_em060k.sh [ssh_target] [apn] [both|ru]
+# Examples:
 #   ./unlock_mudi_em060k.sh root@192.168.8.1 internet.yota
+#   ./unlock_mudi_em060k.sh root@192.168.8.1 mtnirancell
 # ==============================================================================
 set -euo pipefail
 
 ROUTER="${1:-root@192.168.8.1}"
 APN="${2:-internet.yota}"
+MODE="${3:-both}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="${SCRIPT_DIR}/backups/$(date +%Y%m%d_%H%M%S)"
 
 ADB_BIN="${SCRIPT_DIR}/bin/mudi_adb_mips_softfloat"
-PATCH_B01="${SCRIPT_DIR}/patched/EM060KGLAAR01A11M2G_01.202.01.202/modem.b01"
-PATCH_MDT="${SCRIPT_DIR}/patched/EM060KGLAAR01A11M2G_01.202.01.202/modem.mdt"
+if [ "$MODE" = "ru" ]; then
+    PATCH_B01="${SCRIPT_DIR}/patched/EM060KGLAAR01A11M2G_01.202.01.202/modem.b01"
+    PATCH_MDT="${SCRIPT_DIR}/patched/EM060KGLAAR01A11M2G_01.202.01.202/modem.mdt"
+    EXP_B19="94561e4a0c2257aaa7faf652135c3b6327e300cca4c336dff0591e23e2216d07"
+    EXP_B01="0d65dfe2dfecec1612dca7ed40caff1c04920fcf0371fb7e7990957017cedcda"
+    EXP_MDT="1652c27907ecd5133050c847c4631e72b2c9acdedc6b8b1b2b712dd050507314"
+else
+    PATCH_B01="${SCRIPT_DIR}/patched/EM060KGLAAR01A11M2G_01.202.01.202/ru_ir/modem.b01"
+    PATCH_MDT="${SCRIPT_DIR}/patched/EM060KGLAAR01A11M2G_01.202.01.202/ru_ir/modem.mdt"
+    EXP_B19="e8ea988f4006d183a6d9e2f07c5d5c8756936086cde9458bf7f7684057ec0279"
+    EXP_B01="01eabc0f8b729a6ef93d11eaa58463b1ce9aafe7de3073d4cb619b52ee3d7321"
+    EXP_MDT="f48168777b29162e0d73da6795c43fcdcb8566b6a40c01b6b13ceb4af2e9c445"
+fi
 
 if [ ! -f "$ADB_BIN" ] || [ ! -f "$PATCH_B01" ] || [ ! -f "$PATCH_MDT" ]; then
     echo "ERROR: Required files missing in ${SCRIPT_DIR}/{bin,patched}." >&2
@@ -28,10 +41,11 @@ fi
 mkdir -p "$BACKUP_DIR"
 
 echo "============================================================"
-echo "Quectel EM060K-GL MCC 250 Unlock Utility for GL.iNet Mudi V2"
-echo "Router SSH : ${ROUTER}"
-echo "Target APN : ${APN}"
-echo "Backup Dir : ${BACKUP_DIR}"
+echo "Quectel EM060K-GL Unlock Utility (Russia MCC 250 / Iran MCC 432)"
+echo "Router SSH  : ${ROUTER}"
+echo "Target APN  : ${APN}"
+echo "Unlock Mode : ${MODE} (both = Russia 250 + Iran 432, ru = Russia 250)"
+echo "Backup Dir  : ${BACKUP_DIR}"
 echo "============================================================"
 
 echo "[1/5] Uploading mudi_adb and patched MBN headers to ${ROUTER}:/tmp/ ..."
@@ -39,8 +53,8 @@ scp -O "$ADB_BIN" "${ROUTER}:/tmp/mudi_adb"
 scp -O "$PATCH_B01" "${ROUTER}:/tmp/modem.b01"
 scp -O "$PATCH_MDT" "${ROUTER}:/tmp/modem.mdt"
 
-echo "[2/5] Running diagnostics, ADB unlock, backup, and 1-bit patch on router..."
-ssh "$ROUTER" "APN='${APN}' sh -s" << 'EOF'
+echo "[2/5] Running diagnostics, ADB unlock, backup, and patch on router..."
+ssh "$ROUTER" "APN='${APN}' MODE='${MODE}' EXP_B19='${EXP_B19}' EXP_B01='${EXP_B01}' EXP_MDT='${EXP_MDT}' sh -s" << 'EOF'
 set -e
 
 chmod +x /tmp/mudi_adb
@@ -148,23 +162,24 @@ sha256sum /usrdata/cache/orig_fw_headers/modem.*
 /tmp/mudi_adb pull /usrdata/cache/orig_fw_headers/modem.b01 /tmp/modem_backup/modem.b01.orig
 tar -czf /tmp/modem_headers_backup.tar.gz -C /tmp modem_backup
 
-echo "--- Pushing Patched Headers and Applying 1-Bit Patch in /firmware/image/modem.b19 ---"
+echo "--- Pushing Patched Headers and Applying Patch in /firmware/image/modem.b19 ---"
 /tmp/mudi_adb push /tmp/modem.b01 /usrdata/cache/patched/modem.b01
 /tmp/mudi_adb push /tmp/modem.mdt /usrdata/cache/patched/modem.mdt
 
-/tmp/mudi_adb '
+/tmp/mudi_adb "
 set -e
-s_b19=$(sha256sum /usrdata/cache/orig_fw_headers/modem.b19 | awk "{print \$1}")
-if [ "$s_b19" != "429e4daa890a2b8c4c2aaa0456db37264db41fe1932b46d1659af1483c85631c" ]; then
-    echo "ERROR: Unexpected stock modem.b19 SHA-256 ($s_b19). Aborting."
+s_b19=\$(sha256sum /usrdata/cache/orig_fw_headers/modem.b19 | awk '{print \$1}')
+if [ \"\$s_b19\" != '429e4daa890a2b8c4c2aaa0456db37264db41fe1932b46d1659af1483c85631c' ]; then
+    echo \"ERROR: Unexpected stock modem.b19 SHA-256 (\$s_b19). Aborting.\"
     exit 1
 fi
 
 mount -o remount,rw /
 
 rollback_and_exit() {
-    echo "ROLLBACK TRIGGERED! Restoring stock files..."
-    printf "\x40" | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc 2>/dev/null || true
+    echo 'ROLLBACK TRIGGERED! Restoring stock files...'
+    printf '\x40' | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc 2>/dev/null || true
+    printf '\x78' | dd of=/firmware/image/modem.b19 bs=1 seek=1423975 count=1 conv=notrunc 2>/dev/null || true
     cp -f /usrdata/cache/orig_fw_headers/modem.b01 /firmware/image/modem.b01 || true
     cp -f /usrdata/cache/orig_fw_headers/modem.mdt /firmware/image/modem.mdt || true
     chmod 644 /firmware/image/modem.b19 /firmware/image/modem.b01 /firmware/image/modem.mdt || true
@@ -173,7 +188,17 @@ rollback_and_exit() {
     exit 1
 }
 
-printf "\x50" | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc || rollback_and_exit
+# Reset both bytes to stock first in case switching between 'ru' and 'both' modes
+printf '\x40' | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc || rollback_and_exit
+printf '\x78' | dd of=/firmware/image/modem.b19 bs=1 seek=1423975 count=1 conv=notrunc || rollback_and_exit
+
+# Patch Russia MCC 250 (0x15b595: 0x40 -> 0x50)
+printf '\x50' | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc || rollback_and_exit
+if [ '${MODE}' = 'both' ]; then
+    # Patch Iran MCC 432 (0x15ba67: 0x78 -> 0x7a)
+    printf '\x7a' | dd of=/firmware/image/modem.b19 bs=1 seek=1423975 count=1 conv=notrunc || rollback_and_exit
+fi
+
 cp -f /usrdata/cache/patched/modem.b01 /firmware/image/modem.b01.tmp || rollback_and_exit
 chmod 644 /firmware/image/modem.b01.tmp || rollback_and_exit
 mv -f /firmware/image/modem.b01.tmp /firmware/image/modem.b01 || rollback_and_exit
@@ -185,20 +210,20 @@ mv -f /firmware/image/modem.mdt.tmp /firmware/image/modem.mdt || rollback_and_ex
 rm -rf /usrdata/cache/patched
 sync
 
-new_b19=$(sha256sum /firmware/image/modem.b19 | awk "{print \$1}")
-new_b01=$(sha256sum /firmware/image/modem.b01 | awk "{print \$1}")
-new_mdt=$(sha256sum /firmware/image/modem.mdt | awk "{print \$1}")
+new_b19=\$(sha256sum /firmware/image/modem.b19 | awk '{print \$1}')
+new_b01=\$(sha256sum /firmware/image/modem.b01 | awk '{print \$1}')
+new_mdt=\$(sha256sum /firmware/image/modem.mdt | awk '{print \$1}')
 
-if [ "$new_b19" != "94561e4a0c2257aaa7faf652135c3b6327e300cca4c336dff0591e23e2216d07" ] || \
-   [ "$new_b01" != "0d65dfe2dfecec1612dca7ed40caff1c04920fcf0371fb7e7990957017cedcda" ] || \
-   [ "$new_mdt" != "1652c27907ecd5133050c847c4631e72b2c9acdedc6b8b1b2b712dd050507314" ]; then
-    echo "ERROR: Post-write SHA-256 mismatch!"
+if [ \"\$new_b19\" != '${EXP_B19}' ] || \
+   [ \"\$new_b01\" != '${EXP_B01}' ] || \
+   [ \"\$new_mdt\" != '${EXP_MDT}' ]; then
+    echo 'ERROR: Post-write SHA-256 mismatch!'
     rollback_and_exit
 fi
 
 mount -o remount,ro /
-echo "All 3 files patched and verified successfully."
-'
+echo 'All 3 files patched and verified successfully.'
+"
 
 echo "--- Rebooting Modem to Verify Hexagon DSP State ---"
 gl_modem -B 1-1.2 AT "AT+CGDCONT=1,\"IPV4V6\",\"${APN}\"" || true
@@ -228,6 +253,7 @@ if [ "$DSP_STATE" != "ONLINE" ]; then
     /tmp/mudi_adb '
     mount -o remount,rw /
     printf "\x40" | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc
+    printf "\x78" | dd of=/firmware/image/modem.b19 bs=1 seek=1423975 count=1 conv=notrunc
     cp -f /usrdata/cache/orig_fw_headers/modem.b01 /firmware/image/modem.b01
     cp -f /usrdata/cache/orig_fw_headers/modem.mdt /firmware/image/modem.mdt
     sync

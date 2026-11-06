@@ -3,15 +3,21 @@
 Build and cryptographically verify patched modem.b19, modem.b01, and modem.mdt
 for Quectel EM060K-GL (EM060KGLAAR01A11M2G_01.202.01.202).
 
+Supports two modes:
+  - both (default): Unlocks both Russia (MCC 250) and Iran (MCC 432)
+  - ru            : Unlocks Russia (MCC 250) only
+
 Usage:
-    python3 tools/build_patched_modem.py <stock_image_dir> <output_dir>
+    python3 tools/build_patched_modem.py <stock_image_dir> <output_dir> [both|ru]
 """
 import hashlib
 import os
-import struct
 import subprocess
 import sys
 from q6zip_v32_decompress import B19_VA_BASE, decompress_page_v32, parse_b19_header
+
+RU_PATCH_OFFSET = 0x15B595  # 0x40 -> 0x50 (VA 0xd021d654: 0x1048400c -> 0x1048500c)
+IR_PATCH_OFFSET = 0x15BA67  # 0x78 -> 0x7a (VA 0xd021d674: 0x1048c20a -> 0x1048d20a)
 
 
 def gen_rsa_key(exp_flag: str, key_path: str):
@@ -53,26 +59,25 @@ def rsa_pkcs1_sha256_sign(tbs_bytes: bytes, n: int, d: int) -> bytes:
 
 
 def main():
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <stock_image_dir> <output_dir>", file=sys.stderr)
+    if len(sys.argv) < 3:
+        print(f"Usage: {sys.argv[0]} <stock_image_dir> <output_dir> [both|ru]", file=sys.stderr)
         sys.exit(1)
 
     img_dir = sys.argv[1]
     out_dir = sys.argv[2]
+    mode = sys.argv[3] if len(sys.argv) > 3 else "both"
     os.makedirs(out_dir, exist_ok=True)
 
     b00 = open(os.path.join(img_dir, "modem.b00"), "rb").read()
     b01 = bytearray(open(os.path.join(img_dir, "modem.b01"), "rb").read())
     b19 = bytearray(open(os.path.join(img_dir, "modem.b19"), "rb").read())
 
-    patch_off = 0x15B595
-    orig_word = struct.unpack_from("<I", b19, 0x15B594)[0]
-    assert orig_word == 0x1048400C, f"Unexpected word at 0x15b594: 0x{orig_word:08x}"
-    assert b19[patch_off] == 0x40
+    assert b19[RU_PATCH_OFFSET] == 0x40
+    assert b19[IR_PATCH_OFFSET] == 0x78
 
-    b19[patch_off] = 0x50
-    new_word = struct.unpack_from("<I", b19, 0x15B594)[0]
-    assert new_word == 0x1048500C
+    b19[RU_PATCH_OFFSET] = 0x50
+    if mode == "both":
+        b19[IR_PATCH_OFFSET] = 0x7A
 
     _, _, dict1, dict2, ptrs = parse_b19_header(b19)
     p541_start = ptrs[541] - B19_VA_BASE
@@ -81,8 +86,12 @@ def main():
     orig_p541, _, _ = decompress_page_v32(orig_b19_bytes[p541_start:p541_end], dict1, dict2)
     new_p541, _, _ = decompress_page_v32(bytes(b19[p541_start:p541_end]), dict1, dict2)
     diffs = [(i, orig_p541[i], new_p541[i]) for i in range(1024) if orig_p541[i] != new_p541[i]]
-    assert diffs == [(405, 0x1048400C, 0x1048500C)]
-    print("[OK] Page 541 decompressed diff verified: only word 405 (0xd021d654) changed: 0x1048400c -> 0x1048500c")
+    if mode == "both":
+        assert diffs == [(405, 0x1048400C, 0x1048500C), (413, 0x1048C20A, 0x1048D20A)]
+        print("[OK] Page 541 diff verified (Russia MCC 250 + Iran MCC 432 unlocked)")
+    else:
+        assert diffs == [(405, 0x1048400C, 0x1048500C)]
+        print("[OK] Page 541 diff verified (Russia MCC 250 unlocked)")
 
     n2, e2, d2, n2_bytes = gen_rsa_key("-3", os.path.join(out_dir, "root_ca.key"))
     n1, e1, d1, n1_bytes = gen_rsa_key("-3", os.path.join(out_dir, "attest_ca.key"))
@@ -143,7 +152,9 @@ def main():
     open(os.path.join(out_dir, "modem.b19"), "wb").write(b19)
     open(os.path.join(out_dir, "modem.b01"), "wb").write(b01)
     open(os.path.join(out_dir, "modem.mdt"), "wb").write(new_mdt)
-    print(f"[OK] Wrote patched modem.b19, modem.b01, modem.mdt to {out_dir}")
+    for fn in ["modem.b19", "modem.b01", "modem.mdt"]:
+        h = hashlib.sha256(open(os.path.join(out_dir, fn), "rb").read()).hexdigest()
+        print(f"  {fn:10s}: sha256={h}")
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ sleep 3
 set -e
 mount -o remount,rw /
 printf "\x40" | dd of=/firmware/image/modem.b19 bs=1 seek=1422741 count=1 conv=notrunc
+printf "\x78" | dd of=/firmware/image/modem.b19 bs=1 seek=1423975 count=1 conv=notrunc
 cp -f /usrdata/cache/orig_fw_headers/modem.b01 /firmware/image/modem.b01
 cp -f /usrdata/cache/orig_fw_headers/modem.mdt /firmware/image/modem.mdt
 chmod 644 /firmware/image/modem.b19 /firmware/image/modem.b01 /firmware/image/modem.mdt

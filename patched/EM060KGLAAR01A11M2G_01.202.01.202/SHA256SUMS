@@ -4,7 +4,12 @@ c001a4cd1b0cf51e74d2e56bdb659276f7258de111c47204c96e853fa352bd15  stock/modem.b0
 a4844208578d7664b4292bde3dfef0bec18fed43a953ee04596cc6a855220763  stock/modem.b01
 429e4daa890a2b8c4c2aaa0456db37264db41fe1932b46d1659af1483c85631c  stock/modem.b19
 
-# Patched EM060KGLAAR01A11M2G_01.202.01.202 SHA-256 sums (MCC 250 unlocked)
+# Patched (Russia MCC 250 + Iran MCC 432 Unlocked) SHA-256 sums
+f48168777b29162e0d73da6795c43fcdcb8566b6a40c01b6b13ceb4af2e9c445  patched/ru_ir/modem.mdt
+01eabc0f8b729a6ef93d11eaa58463b1ce9aafe7de3073d4cb619b52ee3d7321  patched/ru_ir/modem.b01
+e8ea988f4006d183a6d9e2f07c5d5c8756936086cde9458bf7f7684057ec0279  patched/ru_ir/modem.b19
+
+# Patched (Russia MCC 250 Only Unlocked) SHA-256 sums
 1652c27907ecd5133050c847c4631e72b2c9acdedc6b8b1b2b712dd050507314  patched/modem.mdt
 0d65dfe2dfecec1612dca7ed40caff1c04920fcf0371fb7e7990957017cedcda  patched/modem.b01
 94561e4a0c2257aaa7faf652135c3b6327e300cca4c336dff0591e23e2216d07  patched/modem.b19
